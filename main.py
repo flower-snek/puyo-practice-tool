@@ -39,6 +39,41 @@ def other_puyo_pos():
     return o
 
 
+def rotate_logic(dir):
+    global rotation
+    # handles logic for rotations (mainly wall kicks, but also can't rotate once in a one wide well)
+    # first do the rotation and pretend it's fine
+    rotation += dir
+    # then check if it's fine
+    # if the other puyo isn't in a wall right now, it's fine
+    # print(other_puyo_pos()[1])
+    if 0 <= other_puyo_pos()[0] < GRID_SIZE[0] and 0 <= other_puyo_pos()[1] < GRID_SIZE[1] + HIDDEN_ROWS and board_at(other_puyo_pos()) == 0:
+        return
+    # print("kicking (rotation =", rotation, ")")
+    # if the rotation is 2 and we're colliding with something it must be something below, we can floor kick here
+    if rotation == 2:
+        puyo_pos[1] -= 1
+        return
+    # if the rotation is 1 or 3 then check the opposite direction; if it's clear, then move that way; otherwise, cancel the rotation
+    if rotation == 1:
+        if canMove(-1):
+            puyo_pos[0] -= 1
+        else:
+            rotation -= dir
+        return
+
+    if rotation == 3:
+        if canMove(1):
+            puyo_pos[0] += 1
+        else:
+            rotation -= dir
+        return
+
+    # if somehow something else happens..... let's just cancel the rotation. be safe.
+    rotation -= dir
+    return
+
+
 if __name__ == "__main__":
     pygame.init()
     running = True
@@ -94,19 +129,16 @@ if __name__ == "__main__":
         if keys[pygame.K_r]:
             board_state = [[0 for y in range(GRID_SIZE[1] + HIDDEN_ROWS)] for x in range(GRID_SIZE[0])]
 
-        # todo: rotation logic
-        '''
         if keys[pygame.K_z] and rotation_active[0]:
-            rotation = (rotation + 3) % 4
+            rotate_logic(-1)
             rotation_active[0] = False
         elif not keys[pygame.K_z] and not rotation_active[0]:
             rotation_active[0] = True
         if keys[pygame.K_x] and rotation_active[1]:
-            rotation = (rotation + 1) % 4
+            rotate_logic(1)
             rotation_active[1] = False
         elif not keys[pygame.K_x] and not rotation_active[1]:
             rotation_active[1] = True
-        '''
 
         # ## LOGIC STUFF GOES HERE ## #
 
