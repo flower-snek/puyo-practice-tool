@@ -1,4 +1,8 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-24ddc0f5d75046c5622901739e7c5dd533143b0c8e959d652212380cedb1ea36.svg)](https://classroom.github.com/a/QB74hIJx)
+## puyo practice tool
+
+This was my final project for my CMSC437 Graphical User Interfaces course at UMBC. To run it, you have to run `python3 main.py`. I didn't compile it or anything. I know it's inconvenient. You also probably need some packages but I don't remember what they would be since I'm writing this several months after graduating. I'm sure python will tell you.
+
+--
 
 Puyo graphics (puyo0-3.png) from Puyo Puyo Tsu, ripped from Spriter's Resource here: https://www.spriters-resource.com/genesis_32x_scd/puyopuyo/sheet/96326/
 
