@@ -1,0 +1,6 @@
+"A transition pattern named after the two L shapes and its reversibility."
+0 0 0 0 0 0
+0 0 0 0 0 0
+1 2 3 4 0 0
+1 1 2 3 0 4
+3 3 2 2 4 4

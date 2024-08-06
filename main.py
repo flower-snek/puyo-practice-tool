@@ -1,281 +1,274 @@
 import pygame
+import constants as CONST
+import game_logic as game
+import os
+import csv
 import math
-import random
 
-# constants
-GRID_SIZE = (6, 13)
-HIDDEN_ROWS = 1
-GAME_SIZE = (1280, 720)
-PUYO_COLORS = [pygame.Color(30, 30, 30), pygame.Color(80, 40, 40), pygame.Color(80, 80, 40), pygame.Color(40, 80, 40), pygame.Color(40, 40, 80)]
-
-# frame data (src: https://puyonexus.com/wiki/Puyo_Puyo_Tsu/Frame_Data_Tables)
-PUYO_FALL_TIME = 32
-DAS = 8  # Delayed Auto Shift
-ARR = 2  # Auto Repeat Rate
-DROP_TIMES = [10, 5, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2]
-TIME_BETWEEN_PUYOS = 16
-
-TIME_TO_POP = 48 # long animation...
-GROUP_TO_POP = 4  # 4 is default ofc, but other numbers can be ""fun""
-
-
-def collision_logic():
-    return puyo_pos[1] >= GRID_SIZE[1] + HIDDEN_ROWS or other_puyo_pos()[1] >= GRID_SIZE[1] + HIDDEN_ROWS or board_at(puyo_pos) != 0 or board_at(other_puyo_pos()) != 0
+'''
+TODO LIST:
+- ~~the practice mode that this was made for~~ MOSTLY DONE?
+- ~~settings menu~~ MOSTLY DONE?
+- ~~colorblind friendly~~ DONE
+- ~~puyo graphics~~ DONE mostly
+- ~~combo count~~ DONE
+- ~~smoother puyo falling~~ DONE
+- ~~pause button~~ actually im just making this an exit button oh well gonna throw it in the controls display ig
+- ~~actual game over screen~~ ACTUALLY MAYBE I WON'T UNLESS I HAVE A GOOD IDEA FOR IT
+- ~~display controls~~ (just a title screen graphic?) JUST A TITLE SCREEN GRAPHIC
+- background
+- ~~title screen improvements~~ THE LOGO IS ENOUGH I GUESS
+- ~~scoring~~ DONE
+- remove debug controls -- maybe i only do this on the official submitted version, then keep the debug controls for the presentation
+'''
 
 
-def board_at(pos):
-    return board_state[pos[0]][pos[1]]
+class Screen:  # enum thing bc otherwise it would just be numbers
+    MAIN_MENU = 1
+    GAMEPLAY = 2
+    PATTERN_DECIDE = 3
+    SETTINGS = 4
 
 
-def canMove(dx):
-    return 0 <= puyo_pos[0] + dx < GRID_SIZE[0] and 0 <= other_puyo_pos()[0] + dx < GRID_SIZE[0] and board_at([puyo_pos[0] + dx, puyo_pos[1]]) == 0 and board_at([other_puyo_pos()[0] + dx, other_puyo_pos()[1]]) == 0
+COLORBLIND_TOGGLE = False
+FALL_SPEED_SEL = 0
 
 
-def other_puyo_pos():
-    o = [i for i in puyo_pos]
-    if rotation == 0:
-        o[1] -= 1
-    elif rotation == 1:
-        o[0] += 1
-    elif rotation == 2:
-        o[1] += 1
-    elif rotation == 3:
-        o[0] -= 1
-    return o
+def draw_button(scr, text, font, tcol, x, y, w, h, bcol):
+    pygame.draw.rect(scr, bcol, pygame.Rect(x, y, w, h))
+    text_surface = font.render(text, True, tcol)
+    size = text_surface.get_rect()
+    scr.blit(text_surface, (x + w/2 - size.w/2, y + h/2 - size.h/2))
 
 
-def rotate_logic(dir):
-    global rotation
-    # handles logic for rotations (mainly wall kicks, but also can't rotate once in a one wide well)
-    # first do the rotation and pretend it's fine
-    rotation = (rotation + dir) % 4
-    # then check if it's fine
-    # if the other puyo isn't in a wall right now, it's fine
-    # print(other_puyo_pos()[1])
-    if 0 <= other_puyo_pos()[0] < GRID_SIZE[0] and 0 <= other_puyo_pos()[1] < GRID_SIZE[1] + HIDDEN_ROWS and board_at(other_puyo_pos()) == 0:
-        return
-    # print("kicking (rotation =", rotation, ")")
-    # if the rotation is 2 and we're colliding with something it must be something below, we can floor kick here
-    if rotation == 2:
-        puyo_pos[1] -= 1
-        return
-    # if the rotation is 1 or 3 then check the opposite direction; if it's clear, then move that way; otherwise, cancel the rotation
-    if rotation == 1:
-        if canMove(-1):
-            puyo_pos[0] -= 1
-        else:
-            rotation = (rotation - dir) % 4
-        return
+def mm_render(scr, opt):
+    # print(opt)
+    # just draw some buttons ig with a highlight on the selected one
+    draw_button(scr, "FREE PLAY", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width()/3, scr.get_height()/2 - 50, scr.get_width()/3, 50,
+                pygame.Color((90, 50, 50) if opt == 0 else (50, 20, 20)))
 
-    if rotation == 3:
-        if canMove(1):
-            puyo_pos[0] += 1
-        else:
-            rotation = (rotation - dir) % 4
-        return
+    draw_button(scr, "PRACTICE", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width()/3, scr.get_height()/2 + 40, scr.get_width()/3, 50,
+                pygame.Color((50, 50, 90) if opt == 1 else (20, 20, 50)))
 
-    # if somehow something else happens..... let's just cancel the rotation. be safe.
-    rotation = (rotation - dir) % 4
-    return
+    draw_button(scr, "OPTIONS", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width()/3, scr.get_height() / 2 + 130, scr.get_width() / 3, 50,
+                pygame.Color((50, 90, 50) if opt == 2 else (20, 50, 20)))
+
+    # oh also the tile screen now
+    size = CONST.TITLE_GRAPHIC.get_rect()
+    scr.blit(CONST.TITLE_GRAPHIC, (scr.get_width()/2 - size.w/2, scr.get_height()/5 - size.h/2))
+
+    size = CONST.CONTROLS_GRAPHIC.get_rect()
+    scr.blit(CONST.CONTROLS_GRAPHIC, (scr.get_width() / 2 - size.w / 2, scr.get_height() - size.h * 1.1))
 
 
-def puyos_need_drop():
-    dropped = False
-    for y in range(GRID_SIZE[1]+HIDDEN_ROWS - 2, -1, -1):
-        for x in range(GRID_SIZE[0]):
-            if board_at([x, y]) != 0 and board_at([x, y+1]) == 0:
-                # get that puyo down from there!!
-                board_state[x][y+1] = board_state[x][y]
-                board_state[x][y] = 0
-                dropped = True
-    return dropped
+def pat_render(scr, opt, pattern):
+    draw_button(scr, "BACK", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width()/3, scr.get_height()/2 - 130, scr.get_width()/3, 50,
+                pygame.Color((90, 50, 50) if opt == 0 else (50, 20, 20)))
+
+    # i dug a hole for myself by pre-defining the position and the fact that theres only one text per button.
+    # so its time for another jank solution: the button is actually two buttons, one for each text box
+    draw_button(scr, f"<- {pattern[0]} ->", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width()/4, scr.get_height()/2 - 40, scr.get_width()/2, 40,
+                pygame.Color((50, 50, 90)))
+    draw_button(scr, pattern[1], CONST.FONTS['xs'], pygame.Color(255, 255, 255), scr.get_width() / 4, scr.get_height() / 2, scr.get_width() / 2, 40,
+                pygame.Color((50, 50, 90)))
+
+    draw_button(scr, "START", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width()/3, scr.get_height() / 2 + 80, scr.get_width() / 3, 50,
+                pygame.Color((50, 90, 50) if opt == 1 else (20, 50, 20)))
 
 
-def flag_pop_puyos():
-    pop_count = 0
-    for y in range(GRID_SIZE[1]+HIDDEN_ROWS):
-        for x in range(GRID_SIZE[0]):
-            if board_at([x, y]) != 0:
-                # this is probably really bad but i dont know a better way to do it and i dont exactly wanna copy code off the internet and its a small enough field that it works fine!!
-                current_group = board_at([x, y])
-                group_size = 1
-                checked_stack = [[x, y]]
-                check_stack = [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]
-                while len(check_stack) > 0:
-                    cur_check = check_stack.pop()
-                    if 0 <= cur_check[0] < GRID_SIZE[0] and 0 <= cur_check[1] < GRID_SIZE[1] + HIDDEN_ROWS:
-                        if board_at(cur_check) == current_group:
-                            group_size += 1
-                            checked_stack.append(cur_check)
-                            new_additions = [[cur_check[0] + 1, cur_check[1]], [cur_check[0] - 1, cur_check[1]],
-                                             [cur_check[0], cur_check[1] + 1], [cur_check[0], cur_check[1] - 1]]
-                            for i in new_additions:
-                                unique = True
-                                for j in check_stack:
-                                    if j[0] == i[0] and j[1] == i[1]:
-                                        unique = False
-                                for j in checked_stack:
-                                    if j[0] == i[0] and j[1] == i[1]:
-                                        unique = False
-                                if unique:
-                                    check_stack.append(i)
-                # print(x, y, group_size)
+def set_render(scr, opt):
+    draw_button(scr, f"COLORBLIND COLORS: {'YES' if COLORBLIND_TOGGLE else 'NO'}", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width() / 3,
+                scr.get_height() / 2 - 115, scr.get_width() / 3, 50,
+                pygame.Color((50, 50, 50) if opt == 0 else (20, 20, 20)))
 
-                if group_size >= 4:
-                    popping_board[x][y] = True
-                    pop_count += 1
-    return pop_count
+    draw_button(scr, f"FALL SPEED: {CONST.FALL_SPEED_MULTS[FALL_SPEED_SEL]}x", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width() / 3,
+                scr.get_height() / 2 - 25, scr.get_width() / 3, 50,
+                pygame.Color((50, 50, 50) if opt == 1 else (20, 20, 20)))
+
+    draw_button(scr, "BACK", CONST.FONTS['m'], pygame.Color(255, 255, 255), scr.get_width() / 3,
+                scr.get_height() / 2 + 65, scr.get_width() / 3, 50,
+                pygame.Color((90, 50, 50) if opt == 2 else (50, 20, 20)))
 
 
-def perform_pop_puyos():
-    for y in range(GRID_SIZE[1] + HIDDEN_ROWS):
-        for x in range(GRID_SIZE[0]):
-            if popping_board[x][y]:
-                board_state[x][y] = 0
-                popping_board[x][y] = False
+def draw_background(scr):
+    scr.fill("black")
+    # uh uh uh when in doubt grid
+    # rotation = 15 * math.sin(pygame.time.get_ticks() / 7000) nvm rotation is really expensive
+    bg_surface = pygame.Surface((scr.get_width() + scr.get_height(), scr.get_width() + scr.get_height()))
+    bg_size = bg_surface.get_rect()
+    bg_square_no = 15
+    bg_square_size = bg_size.w / bg_square_no
+    bg_square_indent = 0.05
+    offset = (pygame.time.get_ticks() / 200) % bg_square_size
+    bonus_indent_offset = pygame.time.get_ticks() / 1500
+    for x in range(bg_square_no):
+        xpos = x * bg_square_size
+        for y in range(bg_square_no):
+            ypos = y * bg_square_size
+            this_indent = bg_square_indent + max(2 * math.sin(bonus_indent_offset + (xpos + 2*ypos) / (5 * bg_square_size)) - 1, 0) * 2 * bg_square_indent # jank
+            # print(this_indent)
+            pygame.draw.rect(bg_surface, pygame.Color(20, 20, 20), pygame.Rect(offset + xpos + bg_square_size * this_indent,
+                                                                               1.4 * offset + ypos + bg_square_size * this_indent,
+                                                                               bg_square_size * (1 - 2 * this_indent),
+                                                                               bg_square_size * (1 - 2 * this_indent)))
+    scr.blit(bg_surface, (scr.get_width()/2 - bg_size.w/2, scr.get_height()/2 - bg_size.h/2))
+
+
+def get_patterns():
+    pattern_files = os.listdir("patterns")
+    pattern_arrays = []
+    for f in pattern_files:
+        if f.endswith(".csv"):
+            # print(f)
+            csv_file = open(f"patterns/{f}", 'r', newline='')
+            csv_reader = csv.reader(csv_file, delimiter=' ')
+            pattern_array = []
+            desc = ""
+            for row in csv_reader:
+                # print(row)
+                # first row is the description while the other rows are the pattern (in number form); i want the pattern
+                # rows to be integers while keeping the description alone, but i have no index variable here so
+                # i instead do this kinda jank setup
+                if row[0].isdigit():
+                    numeric_row = [int(i) for i in row]
+                    # print(numeric_row)
+                    pattern_array.append(numeric_row)
+                else:
+                    desc = row[0]
+            csv_file.close()
+            pattern_arrays.append([f, desc, pattern_array])
+    return pattern_arrays
+
+
+def settings_array():
+    return {"fallmult": CONST.FALL_SPEED_MULTS[FALL_SPEED_SEL],
+            "colorblind": COLORBLIND_TOGGLE}
 
 
 if __name__ == "__main__":
     pygame.init()
+
     running = True
-    screen = pygame.display.set_mode(GAME_SIZE)
+    screen = pygame.display.set_mode(CONST.GAME_SIZE)
     clock = pygame.time.Clock()
 
-    dt = 0  # everything will probably be frame-based but just in case
-    puyo_pos = [2, 1]
-    pop_delay = 0
-    drop_delay = 0
-    drop_step = 0
-    fall_timer = PUYO_FALL_TIME
-    das_timers = [0, 0]
-    das_active = [False, False]
-    rotation_active = [True, True]
-    cur_puyos = (random.randint(1, 4), random.randint(1, 4))
-    rotation = 0  # 0-3, up-right-down-left probably
-    board_state = [[0 for y in range(GRID_SIZE[1]+HIDDEN_ROWS)] for x in range(GRID_SIZE[0])]
-    popping_board = [[False for y in range(GRID_SIZE[1] + HIDDEN_ROWS)] for x in range(GRID_SIZE[0])]
+    cur_screen = Screen.MAIN_MENU
+
+    # main menu variables
+    mm_option = 0
+    mm_num_buttons = 3  # this is a const im just lazy
+
+    # practice menu variables
+    p_selection = 0
+
+    patterns = get_patterns()
+    # print(patterns[0])
+
+    # gameplay variable (the board one)
+    board = None
+
     while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
 
         # ## INPUT STUFF GOES HERE ## #
 
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if cur_screen == Screen.MAIN_MENU:
+                # print(event.type)
+                if event.type == pygame.KEYDOWN:
+
+                    if event.key == pygame.K_DOWN:
+                        mm_option += 1
+                    elif event.key == pygame.K_UP:
+                        mm_option -= 1
+                    mm_option = mm_option % mm_num_buttons
+
+                    if event.key == pygame.K_RETURN:
+                        # print(mm_option)
+                        if mm_option == 0:
+                            board = game.board(settings_array())
+                            cur_screen = Screen.GAMEPLAY
+                        if mm_option == 1:
+                            cur_screen = Screen.PATTERN_DECIDE
+                            mm_option = 0
+                        if mm_option == 2:
+                            cur_screen = Screen.SETTINGS
+                            mm_option = 0
+
+            elif cur_screen == Screen.PATTERN_DECIDE:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_DOWN:  # hard coding woo
+                        mm_option += 1
+                    elif event.key == pygame.K_UP:
+                        mm_option -= 1
+                    mm_option = mm_option % 2
+
+                    if event.key == pygame.K_LEFT:
+                        p_selection -= 1
+                    elif event.key == pygame.K_RIGHT:
+                        p_selection += 1
+                    p_selection = p_selection % len(patterns)
+
+                    if event.key == pygame.K_RETURN:
+                        if mm_option == 0:
+                            cur_screen = Screen.MAIN_MENU
+                        if mm_option == 1:
+                            board = game.board(settings_array(), ghost_pattern=patterns[p_selection][2])
+                            cur_screen = Screen.GAMEPLAY
+                            mm_option = 0
+
+            elif cur_screen == Screen.SETTINGS:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_DOWN:
+                        mm_option += 1
+                    elif event.key == pygame.K_UP:
+                        mm_option -= 1
+                    mm_option = mm_option % 3
+                    if mm_option == 0:
+                        if event.key == pygame.K_LEFT or event.key == pygame.K_RIGHT:
+                            COLORBLIND_TOGGLE = not COLORBLIND_TOGGLE
+                    if mm_option == 1:
+                        if event.key == pygame.K_LEFT:
+                            FALL_SPEED_SEL -= 1
+                        elif event.key == pygame.K_RIGHT:
+                            FALL_SPEED_SEL += 1
+                    FALL_SPEED_SEL = FALL_SPEED_SEL % len(CONST.FALL_SPEED_MULTS)
+
+                    if event.key == pygame.K_RETURN:
+                        # might as well make these also toggle/change values
+                        if mm_option == 0:
+                            COLORBLIND_TOGGLE = not COLORBLIND_TOGGLE
+                        if mm_option == 1:
+                            FALL_SPEED_SEL = (FALL_SPEED_SEL + 1) % len(CONST.FALL_SPEED_MULTS)
+                        if mm_option == 2:
+                            cur_screen = Screen.MAIN_MENU
+                            mm_option = 0
+
         keys = pygame.key.get_pressed()
-        for i in range(len(das_timers)):
-            if das_timers[i] > 0:
-                das_timers[i] -= 1
-        if keys[pygame.K_LEFT]:
-            if das_timers[0] == 0 and drop_delay == 0:
-                if das_active[0]:
-                    das_timers[0] = ARR
-                else:
-                    das_timers[0] = DAS
-                    das_active[0] = True
-                if canMove(-1):
-                    puyo_pos[0] -= 1
-        elif das_active[0]:
-            das_active[0] = False
-        if keys[pygame.K_RIGHT]:
-            if das_timers[1] == 0 and drop_delay == 0:
-                if das_active[1]:
-                    das_timers[1] = ARR
-                else:
-                    das_timers[1] = DAS
-                    das_active[1] = True
-                if canMove(1):
-                    puyo_pos[0] += 1
-        elif das_active[1]:
-            das_active[1] = False
-        if keys[pygame.K_DOWN]:
-            fall_timer -= (PUYO_FALL_TIME/2) - 1  # 2f fastfall
 
-        # temporary reset board button
-        if keys[pygame.K_r]:
-            board_state = [[0 for y in range(GRID_SIZE[1] + HIDDEN_ROWS)] for x in range(GRID_SIZE[0])]
-
-        if keys[pygame.K_z] and rotation_active[0]:
-            rotate_logic(-1)
-            rotation_active[0] = False
-        elif not keys[pygame.K_z] and not rotation_active[0]:
-            rotation_active[0] = True
-        if keys[pygame.K_x] and rotation_active[1]:
-            rotate_logic(1)
-            rotation_active[1] = False
-        elif not keys[pygame.K_x] and not rotation_active[1]:
-            rotation_active[1] = True
+        if cur_screen == Screen.GAMEPLAY:
+            if board.input(keys):
+                cur_screen = Screen.MAIN_MENU
 
         # ## LOGIC STUFF GOES HERE ## #
-        if pop_delay > 1:
-            pop_delay -= 1
-        elif pop_delay == 1:
-            pop_delay = 0
-            perform_pop_puyos()
-            if puyos_need_drop():
-                drop_delay = DROP_TIMES[drop_step]
-                drop_step += 1
-        elif drop_delay > 0:
-            drop_delay -= 1
-        elif drop_step > 0:
-            if puyos_need_drop():
-                drop_delay = DROP_TIMES[drop_step]
-                drop_step += 1
-            else:
-                if flag_pop_puyos() > 0:
-                    pop_delay = TIME_TO_POP
-                drop_delay = TIME_BETWEEN_PUYOS
-                drop_step = 0
-        else:
-            fall_timer -= 1
-            if fall_timer <= 0:
-                fall_timer = PUYO_FALL_TIME
-                puyo_pos[1] += 1
 
-            if collision_logic():
-                # print(puyo_pos)
-                # print(other_puyo_pos)
-                puyo_pos[1] -= 1
-                board_state[puyo_pos[0]][puyo_pos[1]] = cur_puyos[0]
-                board_state[other_puyo_pos()[0]][other_puyo_pos()[1]] = cur_puyos[1]
-                # generate next puyo
-                puyo_pos = [2, 1]
-                cur_puyos = (random.randint(1, 4), random.randint(1, 4))
-                rotation = 0
-                if puyos_need_drop():
-                    drop_delay = DROP_TIMES[drop_step]
-                    drop_step += 1
-                else:
-                    if flag_pop_puyos() > 0:
-                        pop_delay = TIME_TO_POP
-                    drop_delay = TIME_BETWEEN_PUYOS
-                    drop_step = 0
+        if cur_screen == Screen.GAMEPLAY:
+            board.game_step()
 
         # ## DRAW STUFF GOES HERE ## #
 
-        screen.fill("black")
-        # draw the grid
-        square_size = math.floor((screen.get_height()*0.8)/GRID_SIZE[1])
-        # thus,
-        grid_pixelsize = (GRID_SIZE[0] * square_size, GRID_SIZE[1] * square_size)
-        base_pos = ((screen.get_width() - grid_pixelsize[0])/2, (screen.get_height() - grid_pixelsize[1])/2)
-
-        pop_highlight = int(((TIME_TO_POP - pop_delay) * 50) / TIME_TO_POP)
-        # print(pop_highlight)
-        for y in range(HIDDEN_ROWS, GRID_SIZE[1] + HIDDEN_ROWS):
-            ypos = base_pos[1] + square_size * (y - HIDDEN_ROWS)
-            for x in range(GRID_SIZE[0]):
-                xpos = base_pos[0] + square_size * x
-                fill = PUYO_COLORS[board_state[x][y]]
-                if popping_board[x][y]:
-                    fill = fill + pygame.Color(pop_highlight, pop_highlight, pop_highlight)
-                if pop_delay == 0 and drop_delay == 0 and drop_step == 0:
-                    if x == puyo_pos[0] and y == puyo_pos[1]:
-                        fill = PUYO_COLORS[cur_puyos[0]]
-                    elif x == other_puyo_pos()[0] and y == other_puyo_pos()[1]:
-                        fill = PUYO_COLORS[cur_puyos[1]]
-                pygame.draw.rect(screen, fill, pygame.Rect(xpos, ypos, square_size*0.9, square_size*0.9))
+        draw_background(screen)
+        if cur_screen == Screen.MAIN_MENU:
+            mm_render(screen, mm_option)
+        if cur_screen == Screen.GAMEPLAY:
+            board.render(screen)
+        if cur_screen == Screen.PATTERN_DECIDE:
+            pat_render(screen, mm_option, patterns[p_selection])
+        if cur_screen == Screen.SETTINGS:
+            set_render(screen, mm_option)
 
         pygame.display.flip()
         # print(board_state)
-        dt = clock.tick(60) / 1000
+        clock.tick(60)
     pygame.quit()
